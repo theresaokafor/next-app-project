@@ -1,0 +1,88 @@
+Steps to execute task 4 (next-app): Host a Dynamic Web Application on EC2 and AWS Cloud
+1. Create 2 buckets to store application codes and sql data.
+2. Create a 3-tier vpc
+3. create subnet group and rds db
+4. create security groups for ALB (80 & 443), webserver (80 & 443), Rds, eic-instance & eic-ep
+5. create eic-endpoint
+6. Launch an instance (webserver). Use instance to migrate  sql data from s3 into RDS db using flyway
+
+wget -qO- https://download.red-gate.com/maven/release/org/flywaydb/enterprise/flyway-commandline/9.21.1/flyway-commandline-9.21.1-linux-x64.tar.gz | tar -xvz && sudo ln -s `pwd`/flyway-9.21.1/flyway /usr/local/bin 
+cd flyway  #(remove the contents of sql file)
+
+#migrate data from s3 to rds
+aws s3 cp s3://nextapp-sqldata-tess/V1__nest.sql /home/ec2-user/flyway-9.21.1/sql
+flyway -url=jdbc:mysql://next.cqwayegptgdv.us-east-1.rds.amazonaws.com:3306/nextdb \
+ -user=Tessy \
+ -password=Okafortessy1 \
+ -locations=filesystem:sql \
+migrate
+
+7. install LAMP stack (see commands below)
+# update ec2 instance
+sudo su
+sudo yum update -y
+
+# install apache 
+sudo yum install -y httpd httpd-tools mod_ssl
+sudo systemctl enable httpd 
+sudo systemctl start httpd
+
+which amazon-linux-extras
+# install php 8
+sudo yum install -y amazon-linux-extras
+sudo amazon-linux-extras enable php8.0
+sudo yum clean metadata
+sudo yum install -y php-cli php-fpm php-mysqlnd php-bcmath php-ctype php-fileinfo php-json php-mbstring php-openssl php-pdo php-gd php-tokenizer php-xml
+php -v
+
+# install mysql8
+sudo amazon-linux-extras install epel -y 
+wget https://dev.mysql.com/get/mysql80-community-release-el9-1.noarch.rpm
+ls -rlt
+dnf install -y mysql80-community-release-el9-1.noarch.rpm
+dnf repolist enabled | grep "mysql.-community."
+dnf install -y mysql-community-server
+sudo systemctl enable mysqld
+sudo systemctl start mysqld
+
+# enable php curl module
+sudo yum install php-curl
+sudo systemctl restart httpd
+
+# Open your php configuration file php.ini and modify settings
+sudo vi /etc/php.ini #(change memory limit to 128M & max execution time to 300) 
+or
+sudo sed -i 's/^max_execution_time =.*/max_execution_time = 300/' /etc/php.ini
+cat /etc/php.ini | grep -i max_execution_time
+cat /etc/php.ini | grep -i memory_limit
+sudo systemctl restart httpd
+
+# enable mod_rewrite module 
+sudo sed -i '/<Directory "\/var\/www\/html">/,/<\/Directory>/ s/AllowOverride None/AllowOverride All/' /etc/httpd/conf/httpd.conf
+sudo systemctl restart httpd
+
+8. Copy & move contents of app code from s3 into /var/www/html 
+aws s3 cp s3://nextapp-tess/nest-app.zip /var/www/html
+cd /var/www/html
+sudo unzip nest-app.zip
+sudo mv nest-app/* /var/www/html
+ls -a nest-app
+sudo mv nest-app/.* /var/www/html
+sudo rm -rf nest-app nest-app.zip
+
+9. Set permissions 777 (read, write, execute to all) for the '/var/www/html' directory and the 'storage/' directory
+sudo chmod -R 777 /var/www/html
+sudo chmod -R 777 /var/www/html/storage
+
+10. Edit '.env' file in the html directory and add db details:
+sudo vi .env #(domain name, db name, username, pw and host name).
+
+11. Open the 'AppServiceProvider.php' file in the '/var/www/html/app/Providers' & add public function boot code.
+sudo vi /var/www/html/app/Providers/AppServiceProvider.php
+sudo service httpd restart
+
+12. create an ami using the web server where installation was done.
+13. create TG & ALB 
+14. Register domain name & create a record, register ssl certificate for secure communication & create https listener.
+15. create LT & ASG using the ami earlier created.
+16. check that the website is up and running.
